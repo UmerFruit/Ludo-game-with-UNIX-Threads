@@ -1,0 +1,457 @@
+/*
+ * i22-0518 Umer Farooq
+ * i22-1697 Saif ur Rehman
+ * i22-1632 Arsalan Javed
+ */
+
+Global Variables
+
+SIZE, CELL_NUMBER, MAX_PLAYER, MAX_DE: Constants defining the board size, number of cells, maximum players, and dice faces.
+cells, houses: Arrays to store game board cells and player houses.
+players: Array to manage player data.
+Winners, turn: Vectors to track game winners and the order of turns.
+m1: Mutex for synchronization across threads.
+DiceRolls: Array to store the results of dice rolls.
+numTokens, nbPlayer: Variables to keep track of the number of tokens per player and the number of players.
+gamefinished: Boolean to indicate if the game has ended.
+killvalues: Array to store data on tokens that have been 'hit' during the game.
+Classes
+
+Cell
+Attributes: x, y, value (Coordinates and value of the cell)
+
+Token
+Attributes: x, y, index, id, hitrate, revstep (Details and status of each token)
+Methods:
+isFinalWay(int): Determines if the token is on the final path based on its index.
+isSafe(): Checks if the token is on a safe spot.
+
+Player
+Attributes: team, goti (array of tokens), color, complete, turnsWO6 (Details and status of each player)
+Methods:
+moveOnFinalWay(int): Adjusts the token's position when moving along the final path.
+getIndexByTurn(): Returns the starting index based on the player's team.
+setColor(): Sets the color attribute based on the team.
+
+
+procedure main
+    initialize semaphore m1 with a value of 1
+    initialize Winners list with four null entries
+
+    loop forever
+        initialize choice to -1
+        initialize Numplayers to -1
+        call menu function with choice and Numplayers as parameters
+
+        if choice equals 2
+            print "Stopping the game ..."
+            exit loop
+
+        set nbPlayer to Numplayers
+        call play function
+
+        for each index i in Winners
+            if Winners[i] is not null
+                print i + 1, "-", Winners[i]->color, "Player", Winners[i]->team + 1, "won!"
+
+    destroy semaphore m1
+    return 0
+
+procedure createMaster(turnval defaults to 0, choice defaults to -1)
+    declare master of type pthread_t
+    create args as a pair of turnval and choice
+    create thread master, passing args to Masterthread
+    declare status
+    join thread master, capturing status in status
+    return status
+
+procedure initGame
+    declare newCells as a 2D array with predefined coordinates
+    declare newHouses as a 3D array with predefined coordinates
+
+    for each cell index i from 0 to CELL_NUMBER
+        set cell[i].y to newCells[i][1]
+        set cell[i].x to newCells[i][0]
+        set cell[i].value to 0
+
+    initialize counter c to 0
+    for each player index i from 0 to MAX_PLAYER
+        for each house index j from 0 to 4
+            set houses[i][j].y to newHouses[i][j][1]
+            set houses[i][j].x to newHouses[i][j][0]
+            set houses[i][j].value to (j + 1) + (i * 10)
+
+            set players[i].goti[j].x to houses[i][j].x
+            set players[i].goti[j].y to houses[i][j].y
+            set players[i].goti[j].index to -1
+            set players[i].team to i
+            set players[i].goti[j].id to 'a' + c
+            increment c by 1
+
+        call setColor for players[i] based on team
+
+        procedure menu(reference choice, reference players)
+    loop while choice > 2 or choice < 1
+        display "1 - To Play"
+        display "2 - To Quit"
+        prompt for input ">"
+        get input choice
+
+    if choice equals 1
+        loop while players < 2 or players > 4
+            display "How many players (between 2 and 4)?"
+            prompt for input ">"
+            get input players
+
+        initialize numTokens to -1
+        loop while numTokens < 1 or numTokens > 4
+            display "How many Tokens (between 1 and 4)?"
+            prompt for input ">"
+            get input numTokens
+
+procedure play
+    call initGame
+    declare Playthreads as array of threads of size 4
+    seed random number generator with current time
+
+    initialize turn list
+    for i from 0 to nbPlayer-1
+        append i to turn list
+
+    call shuff to randomize the order of turns
+
+    loop while game is not finished
+        for i from 0 to nbPlayer-1
+            create thread Playthreads[i] with function playerT and parameter address of turn[i]
+        
+        for i from 0 to nbPlayer-1
+            join thread Playthreads[i]
+        
+        call shuff to randomize the order of turns
+
+        procedure Masterthread with parameter args
+        extract l and m from args as the first and second elements respectively
+    
+        reference p to players at index l
+        declare currtok as null
+    
+        if m is not -1
+            set currtok to the token at index m of player p
+    
+        set turnval to the team number of player p
+    
+        if turns without rolling a 6 for player p is 20 or more
+            display message indicating player p is out of the game
+            remove turnval from turn list
+            decrement nbPlayer
+    
+            loop from last to first in Winners
+                if slot is null
+                    allocate new Player with details of p to this slot
+                    break
+    
+            if nbPlayer equals 1
+                loop from last to first in Winners
+                    if slot is null
+                        allocate new Player with details of first player in turn to this slot
+                        set gamefinished to true
+                        break
+    
+        if currtok is not null and token is in its final path and has been hit at least once
+            set index of currtok to 100
+    
+        if currtok is not null
+            initialize killvalues to [0, -1, -1]
+            loop over each player except player p
+                loop over each token of the current player
+                    if token coordinates match currtok's and they are not teammates and token is not in a safe zone
+                        increment kill counter
+                        update xval to current player index
+                        update yval to current token index
+    
+                        if kill counter is 2 or more
+                            exit loops
+    
+            if all tokens of player p are complete
+                initialize already to false
+                loop over each slot in Winners
+                    if slot is not null and team matches p's team
+                        set already to true
+                        exit loop
+    
+                if not already
+                    loop over each slot in Winners
+                        if slot is null
+                            display adding player p to Winners
+                            allocate new Player with details of p to this slot
+                            sleep for 5 seconds
+                            break
+    
+                    remove p's team from turn
+                    decrement nbPlayer
+                    display player p's team removed message
+    
+                    if nbPlayer equals 1
+                        loop from last to first in Winners
+                            if slot is null
+                                display adding final player to Winners
+                                allocate new Player with details of the first player in turn to this slot
+                                sleep for 5 seconds
+                                set gamefinished to true
+                                break
+    
+        return null
+        procedure Masterthread with parameter args
+        extract l and m from args as the first and second elements respectively
+    
+        reference p to players at index l
+        declare currtok as null
+    
+        if m is not -1
+            set currtok to the token at index m of player p
+    
+        set turnval to the team number of player p
+    
+        if turns without rolling a 6 for player p is 20 or more
+            display message indicating player p is out of the game
+            remove turnval from turn list
+            decrement nbPlayer
+    
+            loop from last to first in Winners
+                if slot is null
+                    allocate new Player with details of p to this slot
+                    break
+    
+            if nbPlayer equals 1
+                loop from last to first in Winners
+                    if slot is null
+                        allocate new Player with details of first player in turn to this slot
+                        set gamefinished to true
+                        break
+    
+        if currtok is not null and token is in its final path and has been hit at least once
+            set index of currtok to 100
+    
+        if currtok is not null
+            initialize killvalues to [0, -1, -1]
+            loop over each player except player p
+                loop over each token of the current player
+                    if token coordinates match currtok's and they are not teammates and token is not in a safe zone
+                        increment kill counter
+                        update xval to current player index
+                        update yval to current token index
+    
+                        if kill counter is 2 or more
+                            exit loops
+    
+            if all tokens of player p are complete
+                initialize already to false
+                loop over each slot in Winners
+                    if slot is not null and team matches p's team
+                        set already to true
+                        exit loop
+    
+                if not already
+                    loop over each slot in Winners
+                        if slot is null
+                            display adding player p to Winners
+                            allocate new Player with details of p to this slot
+                            sleep for 5 seconds
+                            break
+    
+                    remove p's team from turn
+                    decrement nbPlayer
+                    display player p's team removed message
+    
+                    if nbPlayer equals 1
+                        loop from last to first in Winners
+                            if slot is null
+                                display adding final player to Winners
+                                allocate new Player with details of the first player in turn to this slot
+                                sleep for 5 seconds
+                                set gamefinished to true
+                                break
+    
+        return null
+
+
+procedure playerT with parameter arg
+    wait on semaphore m1 to enter critical section
+
+    display "Turn : "
+    for each index i in turn
+        display turn[i]
+    display newline
+
+    extract player index l from arg
+    reference p to players at index l
+
+    set turnval to the team number of player p
+    declare MyRolls array of integers for dice results
+    for each i from 0 to 2
+        set MyRolls[i] to 0  // clear rolls array before next move
+
+    call displayCurrent
+
+    display "It's up to player", p.color, turnval + 1, "to play."
+
+    set MyRolls[0] to random number from 1 to MAX_DE
+    if MyRolls[0] equals 6
+        set p.turnsWO6 to 0
+        set MyRolls[1] to random number from 1 to MAX_DE
+        if MyRolls[1] equals 6
+            set MyRolls[2] to random number from 1 to MAX_DE
+            if MyRolls[2] equals 6
+                display "Launch of the dice ... Result : 6,6,6"
+                display "PASS TURN"
+                reset MyRolls array
+                call createMaster with turnval
+                sleep for 1 second
+                signal semaphore m1
+                return NULL
+    else
+        increment p.turnsWO6
+
+    display "Launch of the dice ... Result :"
+    for each i from 0 to 2
+        if MyRolls[i] is not 0
+            display MyRolls[i], ","
+    remove trailing comma and newline
+
+    declare allin boolean and set to true
+    for each token i of player p
+        if token i is not at start or home
+            set allin to false
+            break
+    if allin and first dice roll not 6
+        display "PASS TURN"
+        call createMaster with turnval
+        sleep for 1 second
+        signal semaphore m1
+        return NULL
+
+    declare pass boolean and set to false
+    declare choice integer
+    for each roll i from 0 to 2
+        if MyRolls[i] is 0
+            continue
+
+        set allin to true
+        for each token i of player p
+            if token i is not at start or home
+                set allin to false
+                break
+        if allin and first dice roll not 6
+            display "PASS TURN"
+            call createMaster with turnval
+            sleep for 1 second
+            signal semaphore m1
+            return NULL
+
+        set pass to false
+        while pass is false
+            display "Which piece do you want to move with a throw of", MyRolls[i]
+            get input for choice
+            if choice is invalid, or piece is at home, or piece is at start without a roll of 6
+                display appropriate "INVALID" message
+            else
+                set pass to true
+
+        set result to MyRolls[i]
+        reference curr to token at choice - 1 of player p
+        call createMaster with turnval, choice - 1
+
+        if curr index is -1 and result is 6
+            set curr index to start position based on turn
+            set curr coordinates to starting coordinates
+        else if curr index is not -1
+            if move would exceed final position and exact number is needed
+                display "Cannot move without exact number."
+                display "PASS TURN"
+                call createMaster with turnval, choice - 1
+                sleep for 1 second
+                signal semaphore m1
+                return NULL
+
+            loop with decrementing step from result
+                call createMaster with turnval, choice - 1
+                if curr index is less than total cells
+                    increment curr index circularly
+                    update curr coordinates
+                else
+                    increment curr index
+                    call moveOnFinalWay for player p with choice
+
+                if curr index reaches final position
+                    call displayCurrent
+                    display "MADE IT TO THE END"
+                    increment p.complete for player p
+                    call createMaster with turnval, choice - 1
+                    if gamefinished
+                        signal semaphore m1
+                        return NULL
+                    set curr token to home
+                    check if all tokens are at home
+                        if true
+                            display "PASS TURN"
+                            call createMaster with turnval, choice - 1
+                            signal semaphore m1
+                            return NULL
+
+                if collision detected during the move
+                    handle token collision based on killvalues
+                    if collision is with a block and not final step
+                        reverse the move for curr token
+
+    call createMaster with final values of turnval and choice - 1
+
+    signal semaphore m1
+    return NULL
+    
+    procedure displayCurrent
+    declare currentBoard as 2D array of char with dimensions SIZE x SIZE
+
+    for each row i from 0 to SIZE - 1
+        for each column j from 0 to SIZE - 1
+            set currentBoard[i][j] to Grid[i][j]
+
+    for each player i from 0 to MAX_PLAYER - 1
+        for each token j from 0 to 3
+            if players[i].goti[j].id is not 5 (not at home)
+                reference currposition to currentBoard at player token's coordinates
+                if currposition is between 'a' and 'z'
+                    set currposition to 'T' (indicates a collision)
+                else
+                    set currposition to players[i].goti[j].id
+
+    display an empty line
+    for each row i from 0 to SIZE - 1
+        display a space
+        for each column j from 0 to SIZE - 1
+            initialize s as an empty string
+            set s to currentBoard[i][j] followed by a space
+            switch based on currentBoard[i][j]
+                case '1' to '4'
+                    set s to "O " (represents a player token)
+                    color s based on player color:
+                        '1': color s red
+                        '2': color s green
+                        '3': color s cyan
+                        '4': color s yellow
+                default
+                    for each player a from 0 to MAX_PLAYER - 1
+                        for each token b from 0 to 3
+                            if coordinates match with any player token
+                                color s based on player's team color:
+                                    team 0: color s red
+                                    team 1: color s green
+                                    team 2: color s cyan
+                                    team 3: color s yellow
+            display s
+        display a newline
+    display an empty line
+
+procedure shuff with reference to turn vector
+    initialize a random number generator g with a new seed from random_device
+    shuffle the elements of turn from the beginning to nbPlayer using generator g
+    // This randomly reorders the first nbPlayer elements of the turn vector
